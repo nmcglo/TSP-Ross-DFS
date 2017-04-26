@@ -16,7 +16,7 @@ SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_SOURCE_DIR}/model_config.h.in PROPER
 SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_BINARY_DIR}/model_config.h PROPERTIES GENERATED TRUE)
 
 # All source files for the model
-SET(tsps_srcs
+SET(tspdfs_srcs
 	globals.h
 	tsp_tour.h
 	tsp.h
@@ -26,10 +26,10 @@ SET(tsps_srcs
 	model_config.h
 )
 
-# Set the executable name here: tsps
+# Set the executable name here: tspdfs
 # You will be executing the ./tsps binary
-ADD_EXECUTABLE(tsps ${tsps_srcs})
+ADD_EXECUTABLE(tspdfs ${tspdfs_srcs})
 
-TARGET_LINK_LIBRARIES(tsps ROSS m)
+TARGET_LINK_LIBRARIES(tspdfs ROSS m)
 ## Alternatively, use this command with RIO
 #TARGET_LINK_LIBRARIES(model ROSS RIO m)

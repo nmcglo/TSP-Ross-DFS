@@ -28,15 +28,11 @@ tw_lptype model_lps[] =
 //
 //Define command line arguments default values
 int num_cities= 4;
-int min_fanout= 1;
-int max_fanout= 4;
 
 //Command line opts
 const tw_optdef model_opts[] = {
      TWOPT_GROUP("TSP Models"),
      TWOPT_UINT("cities", num_cities, "Total cities in simulation"),
-     TWOPT_UINT("minfanout", min_fanout, "Min Fanout of graph nodes (Not implemented yet)"),
-     TWOPT_UINT("maxfanout", max_fanout, "Max Fanout of graph nodes (Not Implemented yet)"),
      TWOPT_END()
 };
 
@@ -59,7 +55,6 @@ void displayModelSettings()
           printf("\tTotal Actors: %i\n", total_actors);
           printf("\tTotal Cities: %i\n", num_cities);
           printf("\n");
-          printf("\tuint64s needed: %i\n",MAX_INTS_NEEDED);
 
           printf("\tAvl node count: %i\n", g_tw_avl_node_count);
 
@@ -125,7 +120,6 @@ int lif_main(int argc, char** argv, char **env)
      custom_LPs_per_pe = 1;
 
      jitter = .0001;
-     weight_multiplier = 1;
 
      g_tw_events_per_pe = 1000000;
      // g_tw_avl_node_count = g_tw_avl_node_count * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2 * 2;

@@ -1,7 +1,7 @@
 /*
 tsp.h
 Traveling Salesman Solver
-3-30-17
+4-26-17
 Neil McGlohon
 */
 
@@ -23,27 +23,24 @@ Neil McGlohon
 
 //STRUCTS ------------------------------
 
+typedef struct
+{
+     int cityID;
+     int weight;
+} city_weight_pair;
 
 //TODO order the declarations to optimize memory usage
 typedef struct
 {
-     uint64_t min_complete_tour[MAX_INTS_NEEDED];
-     int* incomingWeights; //TODO for generalization, make into double
-     int* outgoingWeights;
-     tw_lpid* incomingNeighborIDs;
-     tw_lpid* outgoingNeighborIDs;
+     city_weight_pair* incomingCityWeightPairs;
+     city_weight_pair* outgoingCityWeightPairs;
+     int min_downstream_complete_path[MAX_TOUR_LENGTH];
      int self_place;
      int self_city;
      int rng_count;
-     // int min_tour_weight;
-     int min_complete_tour_weight;
+     int min_downstream_weight;
      int num_incoming_neighbors;
      int num_outgoing_neighbors;
-     int msgs_sent;
-     int msgs_rcvd;
-     int mess_since_commit;
-     unsigned int complete_tour_msgs_rcvd;
-     unsigned int self_complete_tours_made;
 } tsp_actor_state;
 
 typedef enum
@@ -55,12 +52,13 @@ typedef enum
 
 typedef struct
 {
-     uint64_t tour_history[MAX_INTS_NEEDED];
+     union{
+          int upstream_proposed_tour[MAX_TOUR_LENGTH]; //defined if messType == TOUR
+          int downstream_min_path[MAX_TOUR_LENGTH]; //defined if messType == COMPLETE
+     } tour_dat; //For simplicity of understanding
      int tour_weight;
      tw_lpid sender;
      int saved_rng_count;
-     int saved_complete_tours;
-     int saved_msgs_rcvd;
      tsp_msg_type messType;
 } tsp_mess;
 
@@ -72,13 +70,7 @@ extern int get_city_from_gid(tw_lpid gid);
 extern int get_place_from_gid(tw_lpid gid);
 
 //TOUR STUFF ------------------------------
-extern uint8_t get_bit(uint64_t bits, uint8_t pos);
-extern uint8_t get_bit_rev(uint64_t bits, uint8_t pos);
-extern uint64_t set_bit(uint64_t bits, uint8_t pos, uint8_t value);
-extern uint8_t isInTour(int city, int endPlace, compact_tour_part_t *tour);
-extern void addToTour(int city, int place, compact_tour_part_t *tour);
-extern void decodeTour(compact_tour_part_t *encodedTour, int *decodedTour);
-extern tw_lpid get_first_gid_in_tour(compact_tour_part_t *tour);
+
 
 
 //DRIVER STUFF -----------------------------
