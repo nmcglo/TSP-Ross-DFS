@@ -1,6 +1,7 @@
 #ifndef globals_h
 #define globals_h
 
+
 #define FALSE 0
 #define TRUE 1
 

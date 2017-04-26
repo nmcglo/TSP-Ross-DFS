@@ -10,11 +10,11 @@ Neil McGlohon
 #include "tsp.h"
 
 
-int is_in_tour(int* tour, int len, int input)
+int is_in_array(int* arr, int len, int input)
 {
      for(int i = 0; i<len; i++)
      {
-          if(tour[i] == input)
+          if(arr[i] == input)
           {
                return 1;
                break;
@@ -39,10 +39,11 @@ void tsp_init (tsp_actor_state *s, tw_lp *lp)
      s->incomingCityWeightPairs = calloc(total_cities, sizeof(city_weight_pair));
      s->outgoingCityWeightPairs = calloc(total_cities, sizeof(city_weight_pair));
 
-
+     s->num_upstream_requests = 0;
      for(int i = 0; i<MAX_TOUR_LENGTH;i++)
      {
           s->min_downstream_complete_path[i] = 0;
+          s->upstream_requests[i] = -1;
      }
 
 
@@ -130,6 +131,33 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
           case TOUR: //add and propogate the tour message
           {
                printf("%i: Received TOUR mess\n",s->self_city);
+               int rec_city = get_city_from_gid(in_msg->sender);
+
+
+               if(s->is_all_downstream_complete) //if all downstream complete -- send back a complete mess with min path/weight
+               {
+
+               }
+               else //all downstream is complete is not complete
+               {
+                    if(!is_in_array(s->upstream_requests,s->num_upstream_requests,rec_city)) //add to the request queue
+                    {
+                         s->upstream_requests[s->num_upstream_requests] = rec_city;
+                         s->num_upstream_requests++;
+                    }
+
+                    if(s->is_working) //currently working on subproblem
+                    {
+                         printf("%i,%i: Received a request while working\n",s->self_city,s->self_place);
+                    }
+                    else //haven't started working on a subproblem
+                    {
+                         s->is_working = TRUE; //now you're working on a problem!
+
+
+                    }
+               }
+
 
           }break;
           case COMPLETE: //you're receiving a complete tour message, stop propogating weaker tours

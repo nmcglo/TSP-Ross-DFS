@@ -35,12 +35,16 @@ typedef struct
      city_weight_pair* incomingCityWeightPairs;
      city_weight_pair* outgoingCityWeightPairs;
      int min_downstream_complete_path[MAX_TOUR_LENGTH];
+     int upstream_requests[MAX_TOUR_LENGTH];
+     int num_upstream_requests;
      int self_place;
      int self_city;
      int rng_count;
      int min_downstream_weight;
      int num_incoming_neighbors;
      int num_outgoing_neighbors;
+     int is_all_downstream_complete;
+     int is_working;
 } tsp_actor_state;
 
 typedef enum
@@ -82,7 +86,7 @@ extern void tsp_commit(tsp_actor_state*s,tw_bf *bf, tsp_mess *in_msg, tw_lp *lp)
 extern void tsp_final(tsp_actor_state *s, tw_lp *lp);
 
 
-//IO STUFF --------------------------------
+//IO STUFF -------------------------------
 
 
 //MAIN STUFF-----------------------------
