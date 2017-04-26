@@ -1,7 +1,7 @@
 /*
 tsp_driver.c
 Traveling Salesman Problem Solver
-3-30-2017
+4-26-2017
 Neil McGlohon
 */
 
@@ -92,7 +92,32 @@ void tsp_prerun(tsp_actor_state *s, tw_lp *lp)
 {
      int self = lp->gid;
 
+     if(s->self_city != 0)
+     {
+          if(s->self_place == 1) //start with the non-zero cities with tours that have 0 already in them
+          {
+               tw_stime init_time = tw_rand_unif(lp->rng)*jitter;
 
+               tw_event *e = tw_event_new(self,init_time,lp);
+               tsp_mess *mess = tw_event_data(e);
+
+               mess->sender = self;
+
+               for(int i = 0; i<MAX_TOUR_LENGTH; i++)
+               {
+                    mess->tour_dat.upstream_proposed_tour[i] = 0;
+               }
+               for(int i = 0; i < total_cities; i++)
+               {
+                    if(s->incomingCityWeightPairs[i].cityID == 0)
+                    {
+                         mess->tour_weight = s->incomingCityWeightPairs[i].weight;
+                    }
+               }
+               mess->messType = TOUR;
+               tw_event_send(e);
+          }
+     }
 }
 
 
@@ -104,7 +129,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
      {
           case TOUR: //add and propogate the tour message
           {
-
+               printf("%i: Received TOUR mess\n",s->self_city);
 
           }break;
           case COMPLETE: //you're receiving a complete tour message, stop propogating weaker tours
