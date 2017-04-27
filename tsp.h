@@ -9,8 +9,17 @@ Neil McGlohon
 #ifndef _tsp_h
 #define _tsp_h
 
+#define FALSE 0
+#define TRUE 1
+
+#define MAX_TOUR_LENGTH 16
+#define MIN_CITY_SEPARATION 1
+#define MAX_CITY_SEPARATION 100
+
+#define DELAY 100
+
 #include "ross.h"
-#include "globals.h"
+#include "structs.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -19,52 +28,6 @@ Neil McGlohon
 #include <stdint.h>
 
 
-
-
-//STRUCTS ------------------------------
-
-typedef struct
-{
-     int cityID;
-     int weight;
-} city_weight_pair;
-
-//TODO order the declarations to optimize memory usage
-typedef struct
-{
-     city_weight_pair* incomingCityWeightPairs;
-     city_weight_pair* outgoingCityWeightPairs;
-     int min_downstream_complete_path[MAX_TOUR_LENGTH];
-     int upstream_requests[MAX_TOUR_LENGTH];
-     int num_upstream_requests;
-     int self_place;
-     int self_city;
-     int rng_count;
-     int min_downstream_weight;
-     int num_incoming_neighbors;
-     int num_outgoing_neighbors;
-     int is_all_downstream_complete;
-     int is_working;
-} tsp_actor_state;
-
-typedef enum
-{
-     TOUR = 1,
-     COMPLETE
-} tsp_msg_type;
-
-
-typedef struct
-{
-     union{
-          int upstream_proposed_tour[MAX_TOUR_LENGTH]; //defined if messType == TOUR
-          int downstream_min_path[MAX_TOUR_LENGTH]; //defined if messType == COMPLETE
-     } tour_dat; //For simplicity of understanding
-     int tour_weight;
-     tw_lpid sender;
-     int saved_rng_count;
-     tsp_msg_type messType;
-} tsp_mess;
 
 
 //MAPPING -----------------------------
@@ -95,6 +58,20 @@ extern int rand_range(int low, int high);
 
 
 extern tw_lptype model_lps[];
+
+
+
+double jitter;
+
+tw_stime lookahead;
+unsigned int nlp_per_pe;
+unsigned int custom_LPs_per_pe;
+int total_actors;
+int total_cities;
+
+//GLOBALS
+
+int** weight_matrix;
 
 
 

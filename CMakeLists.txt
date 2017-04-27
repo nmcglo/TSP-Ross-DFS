@@ -17,9 +17,10 @@ SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_BINARY_DIR}/model_config.h PROPERTIE
 
 # All source files for the model
 SET(tspdfs_srcs
-	globals.h
-	tsp_tour.h
 	tsp.h
+	structs.h
+	priority_queue.h
+	priority_queue.c
 	tsp_main.c
 	tsp_driver.c
 	tsp_map.c
