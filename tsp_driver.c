@@ -57,8 +57,7 @@ void tsp_init (tsp_actor_state *s, tw_lp *lp)
      // s->num_upstream_requests = 0;
      for(int i = 0; i<MAX_TOUR_LENGTH;i++)
      {
-          s->min_downstream_complete_path[i] = 0;
-          // s->upstream_requests[i] = -1;
+          s->min_downstream_complete_path[i] = -1;
      }
 
 
@@ -92,6 +91,14 @@ void tsp_init (tsp_actor_state *s, tw_lp *lp)
      {
           if(s->outgoingCityWeightPairs[i].cityID != 0) //we don't need to be able to send to zero
                push(s->downstream_pq,s->outgoingCityWeightPairs[i].weight,&(s->outgoingCityWeightPairs[i]));
+     }
+
+     if(s->self_place == total_cities - 1) //then you are a leaf - you know your distance back to city 0 so your downstream is complete
+     {
+          s->is_all_downstream_complete = 1;
+          s->min_downstream_complete_path[s->self_place] = s->self_city;
+          s->min_downstream_complete_path[s->self_place+1] = 0;
+          s->min_downstream_weight = weight_matrix[0][me];
      }
 
      // if(s->self_city == 1)
@@ -188,23 +195,60 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                printf("%i,%i: Received TOUR mess from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
                int rec_city = get_city_from_gid(in_msg->sender);
 
+               if(rec_city != s->self_city) //don't add yourself to the request queue - you don't need to send back to yourself
+               {
+                    if(!is_city_in_heap(s->upstream_req_pq,rec_city)) //then add to the request queue
+                    {
+                         printf("%i,%i: Adding %i To Queue\n",s->self_city,s->self_place,rec_city);
+                         push(s->upstream_req_pq,0,&rec_city);
+                    }
+               }
+
 
                if(s->is_all_downstream_complete) //if all downstream complete -- send back a complete mess with min path/weight
                {
-                    printf("%i,%i: all downstream complete\n",s->self_city,s->self_place);
-               }
-               else //all downstream is complete is not complete
-               {
-                    if(rec_city != s->self_city) //don't add yourself to the request queue - you don't need to send back to yourself
+                    printf("%i,%i: all downstream complete - returning complete\n",s->self_city,s->self_place);
+
+                    //while someone in upstream_req_pq
+                    void* nur_ptr = pop(s->upstream_req_pq);
+                    while(nur_ptr)
                     {
-                         if(!is_city_in_heap(s->upstream_req_pq,rec_city)) //then add to the request queue
+                         city_weight_pair next_upstream_requester = *((city_weight_pair *) nur_ptr);
+
+                         tw_lpid dest_gid = get_lp_gid(next_upstream_requester.cityID,s->self_place-1);
+
+                         printf("%i,%i: Sending Complete to %i\n",s->self_city,s->self_place,next_upstream_requester.cityID);
+
+                         tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng),lp);
+                         tsp_mess *mess = tw_event_data(e);
+
+                         //tour_dat
+                         for(int i = 0; i < s->self_place; i++)
                          {
-                              printf("%i,%i: Adding %i To Queue\n",s->self_city,s->self_place,rec_city);
-                              push(s->upstream_req_pq,0,&rec_city);
+                              mess->tour_dat.downstream_min_path[i] = s->min_downstream_complete_path[i];
                          }
+
+                         //tour_weight
+                         mess->tour_weight = s->min_downstream_weight;
+
+
+                         mess->sender = lp->gid; //sender gid
+                         mess->messType = COMPLETE;
+                         tw_event_send(e);
+
+                         nur_ptr = pop(s->upstream_req_pq);
                     }
 
 
+                    //pop someone from the upstream_req_pq
+
+                    //send a complete message to them
+
+                    //endwhile
+
+               }
+               else //all downstream is complete is not complete
+               {
                     if(s->is_working) //currently working on subproblem
                     {
                          printf("%i,%i: Received a request from %i while working\n",s->self_city,s->self_place,rec_city);
@@ -272,7 +316,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                          }
                          else
                          {
-                              printf("%i,%i: I'm a leaf - i'd send back the distance and path to 0!\n",s->self_city,s->self_place);
+                              printf("%i,%i: I am a leaf - this shouldn't have been reached\n",s->self_city,s->self_place);
                          }
                     }
                }
@@ -281,7 +325,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
           }break;
           case COMPLETE: //you're receiving a complete tour message, stop propogating weaker tours
           {
-
+               printf("%i,%i: Received COMPLETE from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
 
           }break;
      }
