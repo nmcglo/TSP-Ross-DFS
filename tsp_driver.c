@@ -24,24 +24,24 @@ int is_in_array(int* arr, int len, int input)
      return 0;
 }
 
-int is_sender_in_req_q(request *q, tw_lpid sender)
+int is_sender_in_task_q(task *q, tw_lpid sender)
 {
      for(int i = 0; i < REQ_Q_MAX_SIZE; i++)
      {
-          request ur = q[i];
+          task ur = q[i];
           if(ur.sender == sender)
                return 1;
      }
      return 0;
 }
 
-void add_to_req_queue(request *q, request ur)
+void add_to_task_queue(task *q, task ur)
 {
      int cityID = get_city_from_gid(ur.sender);
      q[cityID] = ur;
 }
 
-void* process_next_request(request *q)
+void* process_next_task(task *q)
 {
      for(int i = 0; i < REQ_Q_MAX_SIZE; i++)
      {
@@ -54,7 +54,7 @@ void* process_next_request(request *q)
      return NULL;
 }
 
-void* get_queued_request(request *q)
+void* get_queued_task(task *q)
 {
      for(int i = 0; i < REQ_Q_MAX_SIZE; i++)
      {
@@ -82,8 +82,35 @@ void init_downstream_pq(tsp_actor_state *s, heap_t *pq)
      for(int i = 0; i < s->num_outgoing_neighbors; i++)
      {
           if(s->outgoingCityWeightPairs[i].cityID != 0) //we don't need to be able to send to zero
-               push(s->downstream_pq,s->outgoingCityWeightPairs[i].weight,&(s->outgoingCityWeightPairs[i]));
+               push(pq,s->outgoingCityWeightPairs[i].weight,&(s->outgoingCityWeightPairs[i]));
      }
+}
+
+int task_eq(task *req1, task* req2)
+{
+     if(req1->sender == req2->sender)
+     {
+          if(req1->key == req2->key)
+          {
+               return TRUE;
+          }
+     }
+     return FALSE;
+}
+
+void clear_finished_from_queue(task *q)
+{
+     task newQueue[REQ_Q_MAX_SIZE];
+     int newSize = 0;
+     for(int i = 0; i < REQ_Q_MAX_SIZE; i++)
+     {
+          if(q[i].status != FINISHED)
+          {
+               newQueue[newSize] = q[i];
+               newSize++;
+          }
+     }
+     q = newQueue;
 }
 
 
@@ -202,6 +229,17 @@ void tsp_prerun(tsp_actor_state *s, tw_lp *lp)
      }
 }
 
+void tsp_send_heartbeat(tsp_actor_state *s, tw_lp *lp)
+{
+     tw_stime delay = tw_rand_unif(lp->rng)*jitter;
+
+     tw_event *e = tw_event_new(lp->gid,DELAY+delay,lp);
+     tsp_mess *mess = tw_event_data(e);
+
+     mess->messType = SELF;
+     tw_event_send(e);
+}
+
 
 void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *lp)
 {
@@ -247,158 +285,133 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
           }break;
 
 
-          case REQUEST: //add request to your queue
+          case REQUEST: //add task to your queue
           {
                printf("%i,%i: Received REQUEST mess from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
                int rec_city = get_city_from_gid(in_msg->sender);
 
-               if(rec_city != s->self_city) //don't add yourself to the request queue - you don't need to send back to yourself
+               if(rec_city != s->self_city) //don't add yourself to the task queue - you don't need to send back to yourself
                {
-                    if(!is_sender_in_req_q(s->upstream_req_q,in_msg->sender)) //then add to the request queue
+                    // if(!is_sender_in_task_q(s->upstream_req_q,in_msg->sender)) //then add to the task queue
                     {
                          // printf("%i,%i: Adding %i To Queue\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
-                         request ur;
+                         task ur;
+                         ur.sender = in_msg->sender;
                          ur.downstream_pq = (heap_t*)calloc(1,sizeof(heap_t));
                          init_downstream_pq(s,ur.downstream_pq);
                          ur.tour_weight = in_msg->tour_weight;
+                         ur.key = tw_now(lp);
                          for(int i = 0; i < s->self_place;i++)
                          {
                               ur.upstream_proposed_tour[i] = in_msg->tour_dat.upstream_proposed_tour[i];
                          }
                          ur.status = QUEUED;
-                         add_to_req_queue(s->upstream_req_q,ur);
+                         add_to_task_queue(s->upstream_req_q,ur);
                     }
                }
 
                for(int i = s->num_tasks_working; i < NUM_ACTIVE_REQ_PN; i++)
                {
-                    tw_stime delay = tw_rand_unif(lp->rng)*jitter;
-
-                    tw_event *e = tw_event_new(lp->gid,DELAY+delay,lp);
-                    tsp_mess *mess = tw_event_data(e);
-
-                    mess->sender = lp->gid;
-                    mess->messType = SELF;
-                    tw_event_send(e);
+                    tsp_send_heartbeat(s,lp);
                }
 
           }break;
 
 
-          case SELF: //process a request from the queue
+          case SELF: //process a task from the queue
           {
-               if(s->num_tasks_working < NUM_ACTIVE_REQ_PN)
+               if(get_queued_task(s->upstream_req_q)) //if there is a task that is queued
                {
-                    printf("%i,%i: Received SELF mess\n",s->self_city,s->self_place);
-                    s->num_tasks_working +=1;
+                    if(s->num_tasks_working < NUM_ACTIVE_REQ_PN)
+                    {
+                         printf("%i,%i: Received SELF mess\n",s->self_city,s->self_place);
+                         s->num_tasks_working +=1;
 
-                    request req = *((request*)process_next_request(s->upstream_req_q));
+                         task req = *((task*)process_next_task(s->upstream_req_q));
+                         s->active_task = req;
 
+                         int working_tour[MAX_TOUR_LENGTH];
+                         for(int i = 0; i < s->self_place;i++)
+                         {
+                              working_tour[i] = req.upstream_proposed_tour[i];
+                         }
+
+                         //get valid next best downstream city
+                         city_weight_pair next_best_downstream_city;
+                         int isAlreadyInTour = FALSE;
+                         void* nbdc_ptr;
+                         do {
+                              isAlreadyInTour = FALSE;
+
+                              nbdc_ptr = pop(req.downstream_pq);
+                              if(nbdc_ptr)
+                              {
+                                   next_best_downstream_city = *((city_weight_pair *) nbdc_ptr);
+
+                                   for(int i = 0; i < s->self_place; i++)
+                                   {
+                                        if(next_best_downstream_city.cityID == working_tour[i])
+                                             isAlreadyInTour = TRUE;
+                                   }
+                              }
+                         } while(isAlreadyInTour);
+
+                         if(nbdc_ptr)
+                         {
+
+                              //get gid of the valid city
+                              tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
+
+                              tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng),lp);
+                              tsp_mess *mess = tw_event_data(e);
+
+                              //tour_dat
+                              for(int i = 0; i < s->self_place; i++)
+                              {
+                                   mess->tour_dat.upstream_proposed_tour[i] = working_tour[i];
+                              }
+                              mess->tour_dat.upstream_proposed_tour[s->self_place] = s->self_city;
+
+                              mess->sender = lp->gid; //sender gid
+                              mess->messType = REQUEST;
+                              tw_event_send(e);
+                         }
+                         else
+                         {
+                              printf("%i,%i: LEAF!\n",s->self_city,s->self_place);
+
+                              task theTask = s->active_task;
+                              theTask.status = FINISHED;
+
+                              tw_lpid sender = theTask.sender;
+
+                              printf("%i,%i: Sending COMPLETE to %i\n",s->self_city,s->self_place,get_city_from_gid(sender));
+
+                              tw_event *e = tw_event_new(sender,DELAY+tw_rand_unif(lp->rng),lp);
+                              tsp_mess *mess = tw_event_data(e);
+
+                              // tour_dat
+                              for(int i = 0; i < s->self_place; i++)
+                              {
+                                   mess->tour_dat.downstream_min_path[i] = theTask.upstream_proposed_tour[i];
+                              }
+                              mess->tour_dat.downstream_min_path[s->self_place] = s->self_city;
+
+                              //tour_weight
+
+                              mess->sender = lp->gid; //sender gid
+                              mess->messType = COMPLETE;
+                              tw_event_send(e);
+
+                              s->is_working = FALSE;
+                              s->num_tasks_working = 0;
+
+                              clear_finished_from_queue(s->upstream_req_q);
+
+                              tsp_send_heartbeat(s,lp);
+                         }
+                    }
                }
-
-
-
-
-               //
-               // if(s->is_all_downstream_complete) //if all downstream complete -- send back a complete mess with min path/weight
-               // {
-               //      // printf("%i,%i: all downstream complete - returning complete\n",s->self_city,s->self_place);
-               //
-               //      // void* nur_ptr = get_queued_request(s->upstream_req_q);
-               //      // while(nur_ptr)
-               //      // {
-               //      //      request ur = *((request *) nur_ptr);
-               //      //
-               //      //
-               //      //      city_weight_pair next_upstream_requester = *((city_weight_pair *) nur_ptr);
-               //      //
-               //      //      tw_lpid dest_gid = get_lp_gid(next_upstream_requester.cityID,s->self_place-1);
-               //      //
-               //      //      printf("%i,%i: Sending Complete to %i\n",s->self_city,s->self_place,next_upstream_requester.cityID);
-               //      //
-               //      //      tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng),lp);
-               //      //      tsp_mess *mess = tw_event_data(e);
-               //      //
-               //      //      //tour_dat
-               //      //      for(int i = 0; i < s->self_place; i++)
-               //      //      {
-               //      //           mess->tour_dat.downstream_min_path[i] = s->min_downstream_complete_path[i];
-               //      //      }
-               //      //
-               //      //      //tour_weight
-               //      //      mess->tour_weight = s->min_downstream_weight;
-               //      //
-               //      //
-               //      //      mess->sender = lp->gid; //sender gid
-               //      //      mess->messType = COMPLETE;
-               //      //      tw_event_send(e);
-               //      //
-               //      //      nur_ptr = pop(s->upstream_req_pq);
-               //      // }
-               // }
-               // else //all downstream is complete is not complete
-
-                         // s->is_working = TRUE; //now you're working on a problem!
-                         //
-                         // //get valid next best downstream city
-                         // city_weight_pair next_best_downstream_city;
-                         // int isAlreadyInTour = FALSE;
-                         // void* nbdc_ptr;
-                         // do {
-                         //      isAlreadyInTour = FALSE;
-                         //
-                         //      nbdc_ptr = pop(s->downstream_pq);
-                         //      if(nbdc_ptr)
-                         //      {
-                         //           next_best_downstream_city = *((city_weight_pair *) nbdc_ptr);
-                         //
-                         //           for(int i = 0; i < s->self_place; i++)
-                         //           {
-                         //                if(next_best_downstream_city.cityID == in_msg->tour_dat.upstream_proposed_tour[i])
-                         //                     isAlreadyInTour = TRUE;
-                         //           }
-                         //      }
-                         // } while(isAlreadyInTour);
-                         //
-                         // if(nbdc_ptr)
-                         // {
-                         //
-                         //      //get gid of the valid city
-                         //      tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
-                         //
-                         //      tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng),lp);
-                         //      tsp_mess *mess = tw_event_data(e);
-                         //
-                         //      //tour_dat
-                         //      for(int i = 0; i < s->self_place; i++)
-                         //      {
-                         //           mess->tour_dat.upstream_proposed_tour[i] = in_msg->tour_dat.upstream_proposed_tour[i];
-                         //           // printf("%i ",in_msg->tour_dat.upstream_proposed_tour[i]);
-                         //      }
-                         //      mess->tour_dat.upstream_proposed_tour[s->self_place] = s->self_city;
-                         //      // printf("%i\n",mess->tour_dat.upstream_proposed_tour[s->self_place]);
-                         //
-                         //      //tour_weight
-                         //      for(int i = 0; i < s->num_incoming_neighbors; i++)
-                         //      {
-                         //           if(s->incomingCityWeightPairs[i].cityID == rec_city)
-                         //           {
-                         //                mess->tour_weight = in_msg->tour_weight + s->incomingCityWeightPairs[i].weight;
-                         //           }
-                         //      }
-                         //
-                         //      mess->sender = lp->gid; //sender gid
-                         //      mess->messType = REQUEST;
-                         //      tw_event_send(e);
-                         // }
-                         // else
-                         // {
-                         //      printf("%i,%i: I am a leaf - this shouldn't have been reached\n",s->self_city,s->self_place);
-                         // }
-
-
-
-
           }break;
 
 
@@ -448,10 +461,10 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                     for(int i = 0; i < s->self_place; i++)
                     {
                          mess->tour_dat.upstream_proposed_tour[i] = working_tour[i];
-                         // printf("%i ",in_msg->tour_dat.upstream_proposed_tour[i]);
+                         printf("%i ",mess->tour_dat.upstream_proposed_tour[i]);
                     }
                     mess->tour_dat.upstream_proposed_tour[s->self_place] = s->self_city;
-                    // printf("%i\n",mess->tour_dat.upstream_proposed_tour[s->self_place]);
+                    printf("%i\n",mess->tour_dat.upstream_proposed_tour[s->self_place]);
 
                     //tour_weight
                     mess->tour_weight = 0; //TODO WEIGHTS
@@ -462,9 +475,42 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                }
                else //you've exhausted all of your downstream_pq, now you need to send complete upstream
                {
-                    s->is_all_downstream_complete = TRUE;
+                    if(s->self_place > 1)
+                    {
+                         task theTask = s->active_task;
+                         theTask.status = FINISHED;
 
-                    // printf("%i,%i: DONE\n");
+                         tw_lpid sender = theTask.sender;
+
+                         printf("%i,%i: Sending COMPLETE to %i\n",s->self_city,s->self_place,get_city_from_gid(sender));
+
+                         tw_event *e = tw_event_new(sender,DELAY+tw_rand_unif(lp->rng),lp);
+                         tsp_mess *mess = tw_event_data(e);
+
+                         // tour_dat
+                         for(int i = 0; i < s->self_place; i++)
+                         {
+                              mess->tour_dat.downstream_min_path[i] = theTask.upstream_proposed_tour[i];
+                         }
+                         mess->tour_dat.downstream_min_path[s->self_place] = s->self_city;
+
+                         //tour_weight
+
+                         mess->sender = lp->gid; //sender gid
+                         mess->messType = COMPLETE;
+                         tw_event_send(e);
+
+                         s->is_working = FALSE;
+                         s->num_tasks_working = 0;
+
+                         clear_finished_from_queue(s->upstream_req_q);
+
+                         tsp_send_heartbeat(s,lp);
+                    }
+                    if(s->self_place == 1)
+                    {
+                         printf("%i,%i: DONE!!!!!!!!!\n",s->self_city,s->self_place);
+                    }
                }
 
 

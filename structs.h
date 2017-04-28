@@ -14,7 +14,7 @@ typedef enum
      QUEUED = 1,
      WORKING,
      FINISHED
-} req_status;
+} task_status;
 
 typedef enum
 {
@@ -24,15 +24,16 @@ typedef enum
      SELF,
 } tsp_msg_type;
 
+
 typedef struct
 {
      int upstream_proposed_tour[MAX_TOUR_LENGTH];
      heap_t* downstream_pq;
      int tour_weight;
      tw_lpid sender;
-     tw_lpid recipient;
-     req_status status;
-} request;
+     tw_stime key;
+     task_status status;
+} task;
 
 
 //TODO order the declarations to optimize memory usage
@@ -42,8 +43,9 @@ typedef struct
      city_weight_pair* outgoingCityWeightPairs;
      int min_downstream_complete_path[MAX_TOUR_LENGTH];
      heap_t* downstream_pq;
-     request upstream_req_q[REQ_Q_MAX_SIZE];
-     request requests_made[NUM_ACTIVE_REQ_PN];
+     task upstream_req_q[REQ_Q_MAX_SIZE];
+     task active_task;
+     // task requests_made[NUM_ACTIVE_REQ_PN];
      int num_tasks_working;
 
      // heap_t* upstream_req_pq;
@@ -65,6 +67,7 @@ typedef struct
           int upstream_proposed_tour[MAX_TOUR_LENGTH]; //defined if messType == TOUR
           int downstream_min_path[MAX_TOUR_LENGTH]; //defined if messType == COMPLETE
      } tour_dat; //For simplicity of understanding
+     tw_stime key;
      int tour_weight;
      int downstream_weight;
      tw_lpid sender;
