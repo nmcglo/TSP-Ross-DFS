@@ -12,7 +12,7 @@ Neil McGlohon
 #define FALSE 0
 #define TRUE 1
 
-#define MAX_TOUR_LENGTH 5
+#define MAX_TOUR_LENGTH 21
 #define NUM_ACTIVE_REQ_PN 1
 #define REQ_Q_MAX_SIZE MAX_TOUR_LENGTH*NUM_ACTIVE_REQ_PN
 #define MIN_CITY_SEPARATION 1

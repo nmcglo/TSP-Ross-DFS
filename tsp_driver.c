@@ -419,13 +419,21 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
           //extract upstream_weight = tour_weight - downstream_weight;
           //if weight of to next best city + upstream weight is less than min_downstream_weight + upstream weight
           {
+               task theTask = s->active_task;
+
                printf("%i,%i: Received COMPLETE from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
 
                //extract the tour we're working on up to ourselves from the downstream path received
+               // int working_tour[MAX_TOUR_LENGTH];
+               // for(int i = 0; i < s->self_place; i++)
+               // {
+               //      working_tour[i] = in_msg->tour_dat.downstream_min_path[i];
+               // }
+
                int working_tour[MAX_TOUR_LENGTH];
                for(int i = 0; i < s->self_place; i++)
                {
-                    working_tour[i] = in_msg->tour_dat.downstream_min_path[i];
+                    working_tour[i] = theTask.upstream_proposed_tour[i];
                }
 
                //TODO do stuff for the weitghts - for now focusing on the traversal
@@ -435,7 +443,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                do {
                     isAlreadyInTour = FALSE;
 
-                    nbdc_ptr = pop(s->downstream_pq);
+                    nbdc_ptr = pop(s->downstream_pq); //TODO HERES THE PROBLEM
                     if(nbdc_ptr)
                     {
                          next_best_downstream_city = *((city_weight_pair *) nbdc_ptr);
@@ -475,6 +483,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                }
                else //you've exhausted all of your downstream_pq, now you need to send complete upstream
                {
+                    printf("%i,%i: Exhausted\n",s->self_city,s->self_place);
                     if(s->self_place > 1)
                     {
                          task theTask = s->active_task;
@@ -490,7 +499,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                          // tour_dat
                          for(int i = 0; i < s->self_place; i++)
                          {
-                              mess->tour_dat.downstream_min_path[i] = theTask.upstream_proposed_tour[i];
+                              mess->tour_dat.downstream_min_path[i] = working_tour[i];
                          }
                          mess->tour_dat.downstream_min_path[s->self_place] = s->self_city;
 
@@ -510,6 +519,11 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                     if(s->self_place == 1)
                     {
                          printf("%i,%i: DONE!!!!!!!!!\n",s->self_city,s->self_place);
+                         for(int i = 0; i < total_cities+1;i++)
+                         {
+                              printf("%i ",in_msg->tour_dat.downstream_min_path[i]);
+                         }
+                         printf("\n");
                     }
                }
 
