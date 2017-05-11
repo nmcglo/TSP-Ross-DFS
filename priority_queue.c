@@ -28,6 +28,8 @@ void push (heap_t *h, int priority, void *data) {
 }
 
 void *pop (heap_t *h) {
+    if(!h)
+        return NULL;
     int i, j, k;
     if (!h->len) {
         return NULL;

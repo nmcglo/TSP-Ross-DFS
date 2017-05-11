@@ -164,12 +164,12 @@ void tsp_init (tsp_actor_state *s, tw_lp *lp)
 
      s->num_tasks_working = 0;
 
-     s->downstream_pq = (heap_t *)calloc(1, sizeof(heap_t));
-     for(int i = 0; i < s->num_outgoing_neighbors; i++)
-     {
-          if(s->outgoingCityWeightPairs[i].cityID != 0) //we don't need to be able to send to zero
-               push(s->downstream_pq,s->outgoingCityWeightPairs[i].weight,&(s->outgoingCityWeightPairs[i]));
-     }
+     // s->downstream_pq = (heap_t *)calloc(1, sizeof(heap_t));
+     // for(int i = 0; i < s->num_outgoing_neighbors; i++)
+     // {
+     //      if(s->outgoingCityWeightPairs[i].cityID != 0) //we don't need to be able to send to zero
+     //           push(s->downstream_pq,s->outgoingCityWeightPairs[i].weight,&(s->outgoingCityWeightPairs[i]));
+     // }
 
      if(s->self_place == total_cities - 1) //then you are a leaf - you know your distance back to city 0 so your downstream is complete
      {
@@ -251,36 +251,57 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
           {
                printf("%i,%i: Received INIT_REQUEST mess from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
 
-               s->num_tasks_working +=1;
-               // s->is_working = TRUE; //now you're working on a problem!
+               int rec_city = get_city_from_gid(in_msg->sender);
 
-               city_weight_pair next_best_downstream_city = *((city_weight_pair *) pop(s->downstream_pq));
-
-               tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
-
-               tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng)*jitter,lp);
-               tsp_mess *mess = tw_event_data(e);
-
-               mess->sender = lp->gid;
-
-               //initialize the proposed tour so far
-               for(int i = 0; i<MAX_TOUR_LENGTH; i++)
+               task ur;
+               ur.sender = in_msg->sender;
+               ur.downstream_pq = (heap_t*)calloc(1,sizeof(heap_t));
+               init_downstream_pq(s,ur.downstream_pq);
+               ur.tour_weight = 0;
+               ur.key = tw_now(lp);
+               for(int i = 0; i < MAX_TOUR_LENGTH;i++)
                {
-                    mess->tour_dat.upstream_proposed_tour[i] = -1;
+                    ur.upstream_proposed_tour[i] = -1;
                }
-               mess->tour_dat.upstream_proposed_tour[0] = 0; //first one is zero
-               mess->tour_dat.upstream_proposed_tour[1] = s->self_city; //the next is yourself
+               ur.upstream_proposed_tour[0] = 0;
+               ur.status = QUEUED;
+               add_to_task_queue(s->upstream_req_q,ur);
 
-               //initialize the weight of the proposed tour so far
-               for(int i = 0; i < s->num_incoming_neighbors; i++)
-               {
-                    if(s->incomingCityWeightPairs[i].cityID == 0)
-                    {
-                         mess->tour_weight = s->incomingCityWeightPairs[i].weight; //distance from 0 to you
-                    }
-               }
-               mess->messType = REQUEST;
-               tw_event_send(e);
+               tsp_send_heartbeat(s,lp);
+
+
+               //
+               //
+               // s->num_tasks_working +=1;
+               // // s->is_working = TRUE; //now you're working on a problem!
+               //
+               // city_weight_pair next_best_downstream_city = *((city_weight_pair *) pop(s->downstream_pq));
+               //
+               // tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
+               //
+               // tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng)*jitter,lp);
+               // tsp_mess *mess = tw_event_data(e);
+               //
+               // mess->sender = lp->gid;
+               //
+               // //initialize the proposed tour so far
+               // for(int i = 0; i<MAX_TOUR_LENGTH; i++)
+               // {
+               //      mess->tour_dat.upstream_proposed_tour[i] = -1;
+               // }
+               // mess->tour_dat.upstream_proposed_tour[0] = 0; //first one is zero
+               // mess->tour_dat.upstream_proposed_tour[1] = s->self_city; //the next is yourself
+               //
+               // //initialize the weight of the proposed tour so far
+               // for(int i = 0; i < s->num_incoming_neighbors; i++)
+               // {
+               //      if(s->incomingCityWeightPairs[i].cityID == 0)
+               //      {
+               //           mess->tour_weight = s->incomingCityWeightPairs[i].weight; //distance from 0 to you
+               //      }
+               // }
+               // mess->messType = REQUEST;
+               // tw_event_send(e);
 
           }break;
 
@@ -359,8 +380,10 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                          if(nbdc_ptr)
                          {
 
+
                               //get gid of the valid city
                               tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
+
 
                               tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng),lp);
                               tsp_mess *mess = tw_event_data(e);
@@ -374,6 +397,9 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
 
                               mess->sender = lp->gid; //sender gid
                               mess->messType = REQUEST;
+
+                              printf("%i,%i: Sending REQUEST to %i\n",s->self_city,s->self_place,get_city_from_gid(dest_gid));
+
                               tw_event_send(e);
                          }
                          else
@@ -443,7 +469,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                do {
                     isAlreadyInTour = FALSE;
 
-                    nbdc_ptr = pop(s->downstream_pq); //TODO HERES THE PROBLEM
+                    nbdc_ptr = pop(theTask.downstream_pq); //TODO HERES THE
                     if(nbdc_ptr)
                     {
                          next_best_downstream_city = *((city_weight_pair *) nbdc_ptr);
@@ -469,10 +495,10 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                     for(int i = 0; i < s->self_place; i++)
                     {
                          mess->tour_dat.upstream_proposed_tour[i] = working_tour[i];
-                         printf("%i ",mess->tour_dat.upstream_proposed_tour[i]);
+                         // printf("%i ",mess->tour_dat.upstream_proposed_tour[i]);
                     }
                     mess->tour_dat.upstream_proposed_tour[s->self_place] = s->self_city;
-                    printf("%i\n",mess->tour_dat.upstream_proposed_tour[s->self_place]);
+                    // printf("%i\n",mess->tour_dat.upstream_proposed_tour[s->self_place]);
 
                     //tour_weight
                     mess->tour_weight = 0; //TODO WEIGHTS
