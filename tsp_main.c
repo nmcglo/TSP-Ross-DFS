@@ -126,9 +126,10 @@ int lif_main(int argc, char** argv, char **env)
 
      total_actors = total_cities*total_cities + total_cities; //N^2 + N, One for each city-position, and one for each ending city
 
+     max_num_required_to_send_out = ceil(total_cities/2.0);
 
      g_tw_nlp = (total_actors);
-     g_tw_lookahead = jitter * .001;
+     g_tw_lookahead = jitter * .01;
      custom_LPs_per_pe = (g_tw_nlp / g_tw_npe)/tw_nnodes();
      nlp_per_pe = custom_LPs_per_pe;
 

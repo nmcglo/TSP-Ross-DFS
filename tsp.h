@@ -12,7 +12,7 @@ Neil McGlohon
 #define FALSE 0
 #define TRUE 1
 
-#define MAX_TOUR_LENGTH 1001
+#define MAX_TOUR_LENGTH 10
 #define NUM_ACTIVE_REQ_PN 1
 #define REQ_Q_MAX_SIZE MAX_TOUR_LENGTH*NUM_ACTIVE_REQ_PN
 #define MIN_CITY_SEPARATION 1
@@ -70,6 +70,7 @@ unsigned int nlp_per_pe;
 unsigned int custom_LPs_per_pe;
 int total_actors;
 int total_cities;
+int max_num_required_to_send_out; //maximum number of downstream requests to make at the top level to ensure that all possible tours are enumerated. (ceil(total_cities/2))
 
 //GLOBALS
 

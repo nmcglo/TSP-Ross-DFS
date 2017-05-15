@@ -30,6 +30,8 @@ typedef struct
      int upstream_proposed_tour[MAX_TOUR_LENGTH];
      heap_t* downstream_pq;
      int tour_weight;
+     int best_downstream_tour[MAX_TOUR_LENGTH];
+     int best_down_weight;
      tw_lpid sender;
      tw_stime key;
      task_status status;
@@ -58,6 +60,8 @@ typedef struct
      int num_outgoing_neighbors;
      int is_all_downstream_complete;
      int is_working;
+     int num_req_sent;
+     int num_complete_tours;
 } tsp_actor_state;
 
 
@@ -73,6 +77,7 @@ typedef struct
      tw_lpid sender;
      tsp_msg_type messType;
      int saved_rng_count;
+     // tsp_actor_state saved_state;
 } tsp_mess;
 
 

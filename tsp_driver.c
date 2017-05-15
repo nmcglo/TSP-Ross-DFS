@@ -86,6 +86,7 @@ void init_downstream_pq(tsp_actor_state *s, heap_t *pq)
      }
 }
 
+
 int task_eq(task *req1, task* req2)
 {
      if(req1->sender == req2->sender)
@@ -164,6 +165,8 @@ void tsp_init (tsp_actor_state *s, tw_lp *lp)
 
      s->num_tasks_working = 0;
 
+     s->num_req_sent = 0;
+
      // s->downstream_pq = (heap_t *)calloc(1, sizeof(heap_t));
      // for(int i = 0; i < s->num_outgoing_neighbors; i++)
      // {
@@ -191,7 +194,7 @@ void tsp_init (tsp_actor_state *s, tw_lp *lp)
 
      // printf("%i: Num Outgoing Neighbors = %i\n",s->self_city,s->num_outgoing_neighbors);
 
-
+     s->num_complete_tours = 0;
 
      if(self == 0)
      {
@@ -212,18 +215,22 @@ void tsp_prerun(tsp_actor_state *s, tw_lp *lp)
 
      if(s->self_city != 0)
      {
-          if(s->self_place == 1) //start with the non-zero cities with tours that have 0 already in them
+          if(s->self_city-1 < max_num_required_to_send_out)
           {
-               for(int i = 0; i < NUM_ACTIVE_REQ_PN; i++) //starts as many tasks as allowed
+
+               if(s->self_place == 1) //start with the non-zero cities with tours that have 0 already in them
                {
-                    tw_stime init_time = tw_rand_unif(lp->rng)*jitter;
+                    for(int i = 0; i < NUM_ACTIVE_REQ_PN; i++) //starts as many tasks as allowed
+                    {
+                         tw_stime init_time = tw_rand_unif(lp->rng)*jitter;
 
-                    tw_event *e = tw_event_new(self,init_time,lp);
-                    tsp_mess *mess = tw_event_data(e);
+                         tw_event *e = tw_event_new(self,init_time,lp);
+                         tsp_mess *mess = tw_event_data(e);
 
-                    mess->sender = self;
-                    mess->messType = INIT_REQUEST;
-                    tw_event_send(e);
+                         mess->sender = self;
+                         mess->messType = INIT_REQUEST;
+                         tw_event_send(e);
+                    }
                }
           }
      }
@@ -244,12 +251,13 @@ void tsp_send_heartbeat(tsp_actor_state *s, tw_lp *lp)
 void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *lp)
 {
      in_msg->saved_rng_count = s->rng_count;
+     // in_msg->saved_state = *s;
 
      switch(in_msg->messType)
      {
           case INIT_REQUEST: //you are receiving a self message instructing you to start - only sent in prerun
           {
-               printf("%i,%i: Received INIT_REQUEST mess from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
+               // printf("%i,%i: Received INIT_REQUEST mess from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
 
                int rec_city = get_city_from_gid(in_msg->sender);
 
@@ -259,76 +267,49 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                init_downstream_pq(s,ur.downstream_pq);
                ur.tour_weight = 0;
                ur.key = tw_now(lp);
+
+               //initialize tour to start at 0
                for(int i = 0; i < MAX_TOUR_LENGTH;i++)
                {
                     ur.upstream_proposed_tour[i] = -1;
                }
                ur.upstream_proposed_tour[0] = 0;
+
+               for(int i = 0; i < s->num_incoming_neighbors; i++)
+               {
+                    if(s->incomingCityWeightPairs[i].cityID == 0)
+                    {
+                         ur.tour_weight = s->incomingCityWeightPairs[i].weight; //distance from 0 to you
+                    }
+               }
+
                ur.status = QUEUED;
                add_to_task_queue(s->upstream_req_q,ur);
 
                tsp_send_heartbeat(s,lp);
-
-
-               //
-               //
-               // s->num_tasks_working +=1;
-               // // s->is_working = TRUE; //now you're working on a problem!
-               //
-               // city_weight_pair next_best_downstream_city = *((city_weight_pair *) pop(s->downstream_pq));
-               //
-               // tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
-               //
-               // tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng)*jitter,lp);
-               // tsp_mess *mess = tw_event_data(e);
-               //
-               // mess->sender = lp->gid;
-               //
-               // //initialize the proposed tour so far
-               // for(int i = 0; i<MAX_TOUR_LENGTH; i++)
-               // {
-               //      mess->tour_dat.upstream_proposed_tour[i] = -1;
-               // }
-               // mess->tour_dat.upstream_proposed_tour[0] = 0; //first one is zero
-               // mess->tour_dat.upstream_proposed_tour[1] = s->self_city; //the next is yourself
-               //
-               // //initialize the weight of the proposed tour so far
-               // for(int i = 0; i < s->num_incoming_neighbors; i++)
-               // {
-               //      if(s->incomingCityWeightPairs[i].cityID == 0)
-               //      {
-               //           mess->tour_weight = s->incomingCityWeightPairs[i].weight; //distance from 0 to you
-               //      }
-               // }
-               // mess->messType = REQUEST;
-               // tw_event_send(e);
-
           }break;
 
 
           case REQUEST: //add task to your queue
           {
-               printf("%i,%i: Received REQUEST mess from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
+               // printf("%i,%i: Received REQUEST mess from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
                int rec_city = get_city_from_gid(in_msg->sender);
 
                if(rec_city != s->self_city) //don't add yourself to the task queue - you don't need to send back to yourself
                {
-                    // if(!is_sender_in_task_q(s->upstream_req_q,in_msg->sender)) //then add to the task queue
+                    // printf("%i,%i: Adding %i To Queue\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
+                    task ur;
+                    ur.sender = in_msg->sender;
+                    ur.downstream_pq = (heap_t*)calloc(1,sizeof(heap_t));
+                    init_downstream_pq(s,ur.downstream_pq);
+                    ur.tour_weight = in_msg->tour_weight;
+                    ur.key = tw_now(lp);
+                    for(int i = 0; i < s->self_place;i++)
                     {
-                         // printf("%i,%i: Adding %i To Queue\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
-                         task ur;
-                         ur.sender = in_msg->sender;
-                         ur.downstream_pq = (heap_t*)calloc(1,sizeof(heap_t));
-                         init_downstream_pq(s,ur.downstream_pq);
-                         ur.tour_weight = in_msg->tour_weight;
-                         ur.key = tw_now(lp);
-                         for(int i = 0; i < s->self_place;i++)
-                         {
-                              ur.upstream_proposed_tour[i] = in_msg->tour_dat.upstream_proposed_tour[i];
-                         }
-                         ur.status = QUEUED;
-                         add_to_task_queue(s->upstream_req_q,ur);
+                         ur.upstream_proposed_tour[i] = in_msg->tour_dat.upstream_proposed_tour[i];
                     }
+                    ur.status = QUEUED;
+                    add_to_task_queue(s->upstream_req_q,ur);
                }
 
                for(int i = s->num_tasks_working; i < NUM_ACTIVE_REQ_PN; i++)
@@ -345,7 +326,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                {
                     if(s->num_tasks_working < NUM_ACTIVE_REQ_PN)
                     {
-                         printf("%i,%i: Received SELF mess\n",s->self_city,s->self_place);
+                         // printf("%i,%i: Received SELF mess\n",s->self_city,s->self_place);
                          s->num_tasks_working +=1;
 
                          task req = *((task*)process_next_task(s->upstream_req_q));
@@ -379,11 +360,8 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
 
                          if(nbdc_ptr)
                          {
-
-
                               //get gid of the valid city
                               tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
-
 
                               tw_event *e = tw_event_new(dest_gid,DELAY+tw_rand_unif(lp->rng),lp);
                               tsp_mess *mess = tw_event_data(e);
@@ -398,20 +376,21 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                               mess->sender = lp->gid; //sender gid
                               mess->messType = REQUEST;
 
-                              printf("%i,%i: Sending REQUEST to %i\n",s->self_city,s->self_place,get_city_from_gid(dest_gid));
+                              // printf("%i,%i: Sending REQUEST to %i\n",s->self_city,s->self_place,get_city_from_gid(dest_gid));
 
                               tw_event_send(e);
                          }
                          else
                          {
-                              printf("%i,%i: LEAF!\n",s->self_city,s->self_place);
+                              // printf("%i,%i: LEAF!\n",s->self_city,s->self_place);
+                              s->num_complete_tours+=1;
 
                               task theTask = s->active_task;
                               theTask.status = FINISHED;
 
                               tw_lpid sender = theTask.sender;
 
-                              printf("%i,%i: Sending COMPLETE to %i\n",s->self_city,s->self_place,get_city_from_gid(sender));
+                              // printf("%i,%i: Sending COMPLETE to %i\n",s->self_city,s->self_place,get_city_from_gid(sender));
 
                               tw_event *e = tw_event_new(sender,DELAY+tw_rand_unif(lp->rng),lp);
                               tsp_mess *mess = tw_event_data(e);
@@ -422,6 +401,13 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                                    mess->tour_dat.downstream_min_path[i] = theTask.upstream_proposed_tour[i];
                               }
                               mess->tour_dat.downstream_min_path[s->self_place] = s->self_city;
+
+                              // for(int i = 0; i < s->self_place;i++)
+                              // {
+                              //      printf("%i ",theTask.upstream_proposed_tour[i]);
+                              // }
+                              // printf("%i 0",s->self_city);
+                              // printf("\n");
 
                               //tour_weight
 
@@ -442,20 +428,24 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
 
 
           case COMPLETE: //you're receiving a complete tour message, stop propogating weaker tours:
-          //extract upstream_weight = tour_weight - downstream_weight;
           //if weight of to next best city + upstream weight is less than min_downstream_weight + upstream weight
           {
                task theTask = s->active_task;
 
-               printf("%i,%i: Received COMPLETE from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
+               // printf("%i,%i: Received COMPLETE from %i\n",s->self_city,s->self_place,get_city_from_gid(in_msg->sender));
+               //compare weight of the best completed downstream tour with what you already know of the best downstream complete tour
+
+               if(in_msg->downstream_weight < s->min_downstream_weight)
+               {
+                    for(int i = 0; i < total_cities+1; i++)
+                    {
+                         s->min_downstream_complete_path[i] = in_msg->tour_dat.downstream_min_path[i];
+                    }
+                    s->min_downstream_weight = in_msg->downstream_weight;
+               }
+
 
                //extract the tour we're working on up to ourselves from the downstream path received
-               // int working_tour[MAX_TOUR_LENGTH];
-               // for(int i = 0; i < s->self_place; i++)
-               // {
-               //      working_tour[i] = in_msg->tour_dat.downstream_min_path[i];
-               // }
-
                int working_tour[MAX_TOUR_LENGTH];
                for(int i = 0; i < s->self_place; i++)
                {
@@ -484,7 +474,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
 
                if(nbdc_ptr)
                {
-                    printf("%i,%i: sending REQUEST to %i\n",s->self_city,s->self_place,next_best_downstream_city.cityID);
+                    // printf("%i,%i: sending REQUEST to %i\n",s->self_city,s->self_place,next_best_downstream_city.cityID);
                     //get gid of the valid city
                     tw_lpid dest_gid = get_lp_gid(next_best_downstream_city.cityID,s->self_place+1);
 
@@ -509,7 +499,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                }
                else //you've exhausted all of your downstream_pq, now you need to send complete upstream
                {
-                    printf("%i,%i: Exhausted\n",s->self_city,s->self_place);
+                    // printf("%i,%i: Exhausted\n",s->self_city,s->self_place);
                     if(s->self_place > 1)
                     {
                          task theTask = s->active_task;
@@ -517,17 +507,21 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
 
                          tw_lpid sender = theTask.sender;
 
-                         printf("%i,%i: Sending COMPLETE to %i\n",s->self_city,s->self_place,get_city_from_gid(sender));
+                         // printf("%i,%i: Sending COMPLETE to %i\n",s->self_city,s->self_place,get_city_from_gid(sender));
 
                          tw_event *e = tw_event_new(sender,DELAY+tw_rand_unif(lp->rng),lp);
                          tsp_mess *mess = tw_event_data(e);
 
                          // tour_dat
-                         for(int i = 0; i < s->self_place; i++)
+                         for(int i = 0; i < total_cities+1; i++)
                          {
-                              mess->tour_dat.downstream_min_path[i] = working_tour[i];
+                              mess->tour_dat.downstream_min_path[i] = s->min_downstream_complete_path[i];
                          }
-                         mess->tour_dat.downstream_min_path[s->self_place] = s->self_city;
+                         // for(int i = 0; i < s->self_place; i++)
+                         // {
+                         //      mess->tour_dat.downstream_min_path[i] = working_tour[i];
+                         // }
+                         // mess->tour_dat.downstream_min_path[s->self_place] = s->self_city;
 
                          //tour_weight
 
@@ -544,12 +538,12 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
                     }
                     if(s->self_place == 1)
                     {
-                         printf("%i,%i: DONE!!!!!!!!!\n",s->self_city,s->self_place);
-                         for(int i = 0; i < total_cities+1;i++)
-                         {
-                              printf("%i ",in_msg->tour_dat.downstream_min_path[i]);
-                         }
-                         printf("\n");
+                         // printf("%i,%i: DONE!!!!!!!!!\n",s->self_city,s->self_place);
+                         // for(int i = 0; i < total_cities+1;i++)
+                         // {
+                         //      printf("%i ",s->min_downstream_complete_path[i]);
+                         // }
+                         // printf("\n");
                     }
                }
 
@@ -561,6 +555,7 @@ void tsp_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *l
 
 void tsp_RC_event_handler(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *lp)
 {
+     // s = &(in_msg->saved_state);
      int cur_rng_count = s->rng_count;
      int prev_rng_count = in_msg->saved_rng_count;
      int total_rollbacks_needed = cur_rng_count - prev_rng_count;
@@ -580,6 +575,10 @@ void tsp_commit(tsp_actor_state *s, tw_bf *bf, tsp_mess *in_msg, tw_lp *lp)
 
 void tsp_final(tsp_actor_state *s, tw_lp *lp)
 {
+     if(s->self_place == total_cities-1)
+     {
+          printf("%i: Complete Tours: %i\n",s->self_city,s->num_complete_tours);
+     }
      // int self = lp->gid;
      // if(s->self_place == 1) //the first non-zero cities in the tour report the best they have - this should be allreduced in final version
      // {
